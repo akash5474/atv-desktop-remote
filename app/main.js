@@ -306,7 +306,7 @@ app.whenReady().then(() => {
     // globalShortcut.registerAll(, (a, b, c) => {
     //     console.log('volume', a, b, c);
     // })
-    globalShortcut.registerAll(['Super+Shift+R', 'Command+Control+R'], () => {
+    globalShortcut.registerAll(['Command+Control+R'], () => {
         if (mb.window.isVisible()) {
             hideWindow();
         } else {
