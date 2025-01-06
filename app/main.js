@@ -278,7 +278,7 @@ app.whenReady().then(() => {
             win.webContents.send('shortcutWin');
         })
     } else {
-        globalShortcut.registerAll(['Super+Shift+R', 'Command+Control+R'], () => {
+        globalShortcut.registerAll(['Command+Control+R'], () => {
             if (mb.window.isVisible()) {
                 hideWindow();
             } else {
