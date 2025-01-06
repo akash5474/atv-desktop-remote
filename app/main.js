@@ -9,7 +9,7 @@ var secondWindow;
 process.env['MYPATH'] = path.join(process.env.APPDATA || (process.platform == 'darwin' ? process.env.HOME + '/Library/Application Support' : process.env.HOME + "/.local/share"), "ATV Remote");
 const lodash = _ = require('./js/lodash.min');
 const server_runner = require('./server_runner')
-
+const fs = require('fs');
 server_runner.startServer();
 
 // process.on("uncaughtException", server_runner.stopServer);
@@ -25,6 +25,7 @@ const volumeButtons = ['VolumeUp', 'VolumeDown', 'VolumeMute']
 var handleVolumeButtonsGlobal = false;
 
 var mb;
+var kbHasFocus;
 
 console._log = console.log;
 console.log = function() {
@@ -54,6 +55,7 @@ function createInputWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
+            enableRemoteModule: true    
         },
         hide: true,
         width: 600, 
@@ -67,8 +69,10 @@ function createInputWindow() {
         showWindowThrottle();
     });
     secondWindow.on("blur", () => {
+        if (mb.window.isAlwaysOnTop()) return;
         showWindowThrottle();
     })
+    secondWindow.setMenu(null);
     secondWindow.hide();
 }
 
@@ -90,43 +94,10 @@ function createWindow() {
     global['MB'] = mb;
     mb.on(readyEvent, () => {
         win = mb.window;
-        // interval = setInterval(() => {
-        //     //console.log(`win visible: ${win.isVisible()}`)
-        //     var kvs = volumeButtons.map(btn => {
-        //         return `${btn}: ${globalShortcut.isRegistered(btn)}`
-        //     });
-        //     console.log(kvs.join(", "));
-        // }, 2000);
+       
         var webContents = win.webContents;
         createInputWindow()
-        win.on('runJS', (event, text) => {
-            function isPromise(obj) {
-                return !!obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function';
-            }
-            try {
-                var r = eval(text);
-                if (isPromise(r)) {
-                    r.then(pr => {
-                        webContents.send('runJSresult', pr);
-                    });
-                } else {
-                    webContents.send('runJSresult', r);
-                }
-
-            } catch (e) {
-                webContents.send('runJSerror', e);
-            }
-        });
-
-        win.on('runJS', (e, code) => {
-            try {
-                var r = eval(code);
-                console.log(r);
-            } catch (e) {
-                console.log(e);
-            }
-
-        })
+       
 
         win.on('close', () => {
             console.log('window closed, quitting')
@@ -135,7 +106,6 @@ function createWindow() {
         win.on('show', () => {
             win.webContents.send('shortcutWin');
             if (handleVolumeButtonsGlobal) handleVolume();
-            //console.log('showing window');
         })
 
         win.on('hide', () => {
@@ -147,7 +117,6 @@ function createWindow() {
         })
         ipcMain.on('input-change', (event, data) => {
             console.log('Received input:', data);
-            // Handle the data or forward it to the main window if necessary
             win.webContents.send('input-change', data);
         });
 
@@ -162,22 +131,12 @@ function createWindow() {
             var tf = arg == "true";
             console.log(`setting alwaysOnTop: ${tf}`)
             mb.window.setAlwaysOnTop(tf);
+            
         })
+        ipcMain.handle('uimode', (event, arg) => {
+            secondWindow.webContents.send('uimode', arg);
+        });
 
-        // ipcMain.handle('scanDevices', async(event, arg) => {
-        //     var ks = await remote.scanDevices()
-        //     event.sender.send('scanDevicesResult', ks)
-        // })
-
-        // ipcMain.handle('startPair', async(event, arg) => {
-        //     await remote.startPair(arg);
-        //     event.sender.send('gotStartPair');
-        // })
-
-        // ipcMain.handle('finishPair', async(event, arg) => {
-        //     var creds = await remote.finishPair(arg);
-        //     event.sender.send('pairCredentials', creds);
-        // })
 
         ipcMain.handle('hideWindow', (event) => {
             console.log('hiding window');
@@ -191,19 +150,6 @@ function createWindow() {
             if (server_runner.isServerRunning()) win.webContents.send('wsserver_started')
         })
         
-        // ipcMain.handle('runJS', async(event, arg) => {
-        //     console.log(`runJS ${arg}`)
-        //     try {
-        //         var r = eval(arg);
-        //         if (r && r.then) {
-        //             var rr = r;
-        //             r = await r;
-        //             win.webContents.send('runJSresult', r);
-        //         }
-        //     } catch (err) {
-        //         win.webContents.send('runJSerror', err);
-        //     }
-        // })
         ipcMain.handle('closeInputOpenRemote', (event, arg) => {
             console.log('closeInputOpenRemote');
             showWindow();
@@ -215,6 +161,13 @@ function createWindow() {
             console.log('current-text', arg);
             secondWindow.webContents.send('current-text', arg);
         });
+        ipcMain.handle('kbfocus-status', (event, arg) => {
+            secondWindow.webContents.send('kbfocus-status', arg);
+            kbHasFocus = arg;
+        })
+        ipcMain.handle('kbfocus', () => {
+            win.webContents.send('kbfocus');
+        })
 
         powerMonitor.addListener('resume', event => {
             win.webContents.send('powerResume');
@@ -236,7 +189,6 @@ function createWindow() {
                 win.webContents.send("wsserver_started")
             })
         }
-        //win.webContents.send("wsserver_started")
     })
 }
 
@@ -254,12 +206,16 @@ function showWindow() {
     }, 200);
 }
 
-//var showWindowDebounce = lodash.debounce(showWindow, 100);
 var showWindowThrottle = lodash.throttle(showWindow, 100);
 
 function hideWindow() {
     mb.hideWindow();
-    app.hide();
+    try {
+        app.hide();
+    } catch (err) {
+        // console.log(err);
+        // not sure if this affects windows like app.show does.
+    }
 }
 
 function getWorkingPath() {
@@ -303,17 +259,34 @@ app.whenReady().then(() => {
     })
 
     createWindow();
-    // globalShortcut.registerAll(, (a, b, c) => {
-    //     console.log('volume', a, b, c);
-    // })
-    globalShortcut.registerAll(['Command+Control+R'], () => {
-        if (mb.window.isVisible()) {
-            hideWindow();
+
+    var hotkeyPath = path.join(process.env['MYPATH'], "hotkey.txt")
+    if (fs.existsSync(hotkeyPath)) {
+        var hotkeys = fs.readFileSync(hotkeyPath, {encoding: 'utf-8'}).trim();
+        if (hotkeys.indexOf(",") > -1) {
+            hotkeys = hotkeys.split(',').map(el => { return el.trim() });
         } else {
-            showWindow();
+            hotkeys = [hotkeys];
         }
-        win.webContents.send('shortcutWin');
-    })
+        console.log(`Registering custom hotkeys: ${hotkeys}`)
+        globalShortcut.registerAll(hotkeys, () => {
+            if (mb.window.isVisible()) {
+                hideWindow();
+            } else {
+                showWindow();
+            }
+            win.webContents.send('shortcutWin');
+        })
+    } else {
+        globalShortcut.registerAll(['Command+Control+R'], () => {
+            if (mb.window.isVisible()) {
+                hideWindow();
+            } else {
+                showWindow();
+            }
+            win.webContents.send('shortcutWin');
+        })
+    }
     var version = app.getVersion();
     app.setAboutPanelOptions({
         applicationName: "ATV Remote",

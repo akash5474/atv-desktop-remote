@@ -133,6 +133,9 @@ function startWebsocket() {
             console.log(`current text: ${j.data}`)
             ipcRenderer.invoke('current-text', j.data);
         }
+        if (j.command == "kbfocus-status") {
+            ipcRenderer.invoke('kbfocus-status', j.data);
+        }
     });
 }
 
@@ -232,6 +235,7 @@ function checkWSConnection() {
 }
 
 function ws_init() {
+    console.log('ws_init');
     startWebsocket();
     setTimeout(() => {
         // not sure if needed, but server start now tries to install required python packages which can be slow
